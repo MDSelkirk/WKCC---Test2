@@ -1,0 +1,1520 @@
+<!doctype html>
+<html lang="en">
+    <head>
+        <meta charset="utf-8">
+        <meta http-equiv="X-UA-Compatible" content="IE=edge">
+        <meta name="viewport" content="initial-scale=1,user-scalable=no,maximum-scale=1,width=device-width">
+        <meta name="mobile-web-app-capable" content="yes">
+        <meta name="apple-mobile-web-app-capable" content="yes">
+        <link rel="stylesheet" href="css/leaflet.css">
+        <link rel="stylesheet" href="css/L.Control.Layers.Tree.css">
+        <link rel="stylesheet" href="css/L.Control.Locate.min.css">
+        <link rel="stylesheet" href="css/qgis2web.css">
+        <link rel="stylesheet" href="css/fontawesome-all.min.css">
+        <link rel="stylesheet" href="css/filter.css">
+<link rel="stylesheet" href="css/nouislider.min.css">
+        <link rel="stylesheet" href="css/leaflet.photon.css">
+        <link rel="stylesheet" href="css/leaflet-measure.css">
+        <style>
+        html, body, #map {
+            width: 100%;
+            height: 100%;
+            padding: 0;
+            margin: 0;
+        }
+        .css_ProvincialParks_1 {
+            text-transform: unset;
+            font-family: 'Verdana', sans-serif;
+            font-size: 10pt;
+            font-style: italic;
+            color: #294d29;
+            text-shadow: -1px -1px 0 #cfe2cc,
+                 -1px 1px 0 #cfe2cc,
+                  1px 1px 0 #cfe2cc;
+        }
+
+        
+        .css_MunicipalParks_2 {
+            text-transform: unset;
+            font-family: 'Verdana', sans-serif;
+            font-size: 10pt;
+            font-style: italic;
+            color: #294d29;
+            text-shadow: -1px -1px 0 #cfe2cc,
+                 -1px 1px 0 #cfe2cc,
+                  1px 1px 0 #cfe2cc;
+        }
+        
+        </style>
+        <title>West Kootenay Cycling Routes Map</title>
+    </head>
+    <body>
+        <div id="map">
+        </div>
+        <script src="js/qgis2web_expressions.js"></script>
+        <script src="js/leaflet.js"></script>
+        <script src="js/L.Control.Layers.Tree.min.js"></script>
+        <script src="js/L.Control.Locate.min.js"></script>
+        <script src="js/leaflet-svg-shape-markers.min.js"></script>
+        <script src="js/leaflet.rotatedMarker.js"></script>
+        <script src="js/leaflet.pattern.js"></script>
+        <script src="js/leaflet-hash.js"></script>
+        <script src="js/Autolinker.min.js"></script>
+        <script src="js/rbush.min.js"></script>
+        <script src="js/labelgun.min.js"></script>
+        <script src="js/labels.js"></script>
+        <script src="js/leaflet.photon.js"></script>
+        <script src="js/leaflet-measure.js"></script>
+        <script src="js/tailDT.js"></script>
+<script src="js/nouislider.min.js"></script>
+<script src="js/wNumb.js"></script>
+        <script src="data/ProvincialParks_1.js"></script>
+        <script src="data/MunicipalParks_2.js"></script>
+        <script src="data/BonningtonScrambler_3.js"></script>
+        <script src="data/FrogPeakLoop_4.js"></script>
+        <script src="data/KootenayConfluence_5.js"></script>
+        <script src="data/SantaRosaValleysandVistas_6.js"></script>
+        <script src="data/WKCCProposedRoutes_7.js"></script>
+        <script src="data/WKCCExistingRoutes_8.js"></script>
+        <script src="data/MunnicipalBoundaries_9.js"></script>
+        <script src="data/BCTransitStops_10.js"></script>
+        <script src="data/Rec_Sites_WestKootsRecSites_11.js"></script>
+        <script src="data/BikeShops_12.js"></script>
+        <script src="data/RegionalDistricts_13.js"></script>
+        <script>
+        var highlightLayer;
+        function highlightFeature(e) {
+            highlightLayer = e.target;
+
+            if (e.target.feature.geometry.type === 'LineString' || e.target.feature.geometry.type === 'MultiLineString') {
+              highlightLayer.setStyle({
+                color: '#ffff00',
+              });
+            } else {
+              highlightLayer.setStyle({
+                fillColor: '#ffff00',
+                fillOpacity: 1
+              });
+            }
+        }
+        var map = L.map('map', {
+            zoomControl:false, maxZoom:28, minZoom:1
+        })
+        var hash = new L.Hash(map);
+        map.attributionControl.setPrefix('<a href="https://github.com/tomchadwin/qgis2web" target="_blank">qgis2web</a> &middot; <a href="https://leafletjs.com" title="A JS library for interactive maps">Leaflet</a> &middot; <a href="https://qgis.org">QGIS</a>');
+        var autolinker = new Autolinker({truncate: {length: 30, location: 'smart'}});
+        // remove popup's row if "visible-with-data"
+        function removeEmptyRowsFromPopupContent(content, feature) {
+         var tempDiv = document.createElement('div');
+         tempDiv.innerHTML = content;
+         var rows = tempDiv.querySelectorAll('tr');
+         for (var i = 0; i < rows.length; i++) {
+             var td = rows[i].querySelector('td.visible-with-data');
+             var key = td ? td.id : '';
+             if (td && td.classList.contains('visible-with-data') && feature.properties[key] == null) {
+                 rows[i].parentNode.removeChild(rows[i]);
+             }
+         }
+         return tempDiv.innerHTML;
+        }
+        // add class to format popup if it contains media
+		function addClassToPopupIfMedia(content, popup) {
+			var tempDiv = document.createElement('div');
+			tempDiv.innerHTML = content;
+			if (tempDiv.querySelector('td img')) {
+				popup._contentNode.classList.add('media');
+					// Delay to force the redraw
+					setTimeout(function() {
+						popup.update();
+					}, 10);
+			} else {
+				popup._contentNode.classList.remove('media');
+			}
+		}
+        var title = new L.Control({'position':'topleft'});
+        title.onAdd = function (map) {
+            this._div = L.DomUtil.create('div', 'info');
+            this.update();
+            return this._div;
+        };
+        title.update = function () {
+            this._div.innerHTML = '<h2>West Kootenay Cycling Routes Map</h2>';
+        };
+        title.addTo(map);
+        var abstract = new L.Control({'position':'bottomleft'});
+        abstract.onAdd = function (map) {
+            this._div = L.DomUtil.create('div',
+            'leaflet-control abstract');
+            this._div.id = 'abstract'
+                this._div.setAttribute("onmouseenter", "abstract.show()");
+                this._div.setAttribute("onmouseleave", "abstract.hide()");
+                this.hide();
+                return this._div;
+            };
+            abstract.hide = function () {
+                this._div.classList.remove("abstractUncollapsed");
+                this._div.classList.add("abstract");
+                this._div.innerHTML = 'i'
+            }
+            abstract.show = function () {
+                this._div.classList.remove("abstract");
+                this._div.classList.add("abstractUncollapsed");
+                this._div.innerHTML = 'This interactive web map presents the complete cycling network of the West Kootenays, including existing infrastructure and proposed future routes, providing an overview of current and planned connectivity across the region.<br /><br />**Could be a good location for attributions and update frequency**';
+        };
+        abstract.addTo(map);
+        var zoomControl = L.control.zoom({
+            position: 'topleft'
+        }).addTo(map);
+        L.control.locate({locateOptions: {maxZoom: 19}}).addTo(map);
+        var measureControl = new L.Control.Measure({
+            position: 'topleft',
+            primaryLengthUnit: 'meters',
+            secondaryLengthUnit: 'kilometers',
+            primaryAreaUnit: 'sqmeters',
+            secondaryAreaUnit: 'hectares'
+        });
+        measureControl.addTo(map);
+        document.getElementsByClassName('leaflet-control-measure-toggle')[0].innerHTML = '';
+        document.getElementsByClassName('leaflet-control-measure-toggle')[0].className += ' fas fa-ruler';
+        var bounds_group = new L.featureGroup([]);
+        function setBounds() {
+            if (bounds_group.getLayers().length) {
+                map.fitBounds(bounds_group.getBounds());
+            }
+        }
+        map.createPane('pane_BasemapCartoDB_0');
+        map.getPane('pane_BasemapCartoDB_0').style.zIndex = 400;
+        var layer_BasemapCartoDB_0 = L.tileLayer('https://a.basemaps.cartocdn.com/light_all/{z}/{x}/{y}@2x.png', {
+            pane: 'pane_BasemapCartoDB_0',
+            opacity: 1.0,
+            attribution: '<a href="https://cartodb.com/basemaps/">Map tiles by CartoDB, under CC BY 3.0. Data by OpenStreetMap, under ODbL.</a>',
+            minZoom: 1,
+            maxZoom: 28,
+            minNativeZoom: 0,
+            maxNativeZoom: 20
+        });
+        layer_BasemapCartoDB_0;
+        map.addLayer(layer_BasemapCartoDB_0);
+
+        function titleCase(str) {
+            return str.toLowerCase().replace(/\b\w/g, function(txt) {
+                return txt.toUpperCase();
+            });
+        }
+        
+        function pop_ProvincialParks_1(feature, layer) {
+            if (feature.properties['prot_name']) {
+                const displayName = titleCase (feature.properties['prot_name']);
+                layer.bindTooltip(feature.properties['prot_name'], {
+                    className: 'css_ProvincialParks_1',
+                    sticky: true,      // makes tooltip follow cursor
+                    direction: 'auto'
+                });
+
+                layer.on({
+                    mouseover: function(e) { e.target.openTooltip(); },
+                    mouseout: function(e) { e.target.closeTooltip(); }
+                });
+            }
+        }
+
+        function style_ProvincialParks_1_0() {
+            return {
+                pane: 'pane_ProvincialParks_1',
+                opacity: 1,
+                color: 'rgba(37,96,18,1.0)',
+                dashArray: '5.0,1.0',
+                lineCap: 'butt',
+                lineJoin: 'miter',
+                weight: 1.0, 
+                fill: true,
+                fillOpacity: 0.6,
+                fillColor: 'rgba(114,155,111,0.6039215686274509)',
+                interactive: true,
+            }
+        }
+       
+        map.createPane('pane_ProvincialParks_1');
+        map.getPane('pane_ProvincialParks_1').style.zIndex = 401;
+        map.getPane('pane_ProvincialParks_1').style['mix-blend-mode'] = 'normal';
+        var layer_ProvincialParks_1 = L.geoJson(json_ProvincialParks_1, {
+            pane: 'pane_ProvincialParks_1',
+            style: style_ProvincialParks_1_0,
+            onEachFeature: pop_ProvincialParks_1
+});
+        bounds_group.addLayer(layer_ProvincialParks_1);
+        map.addLayer(layer_ProvincialParks_1);
+        
+        function titleCase(str) {
+            return str.toLowerCase().replace(/\b\w/g, function(txt) {
+                return txt.toUpperCase();
+            });
+        }
+        
+        function pop_MunicipalParks_2(feature, layer) {
+            if (feature.properties['park_name']) {
+                const displayName = titleCase (feature.properties['park_name']);
+                layer.bindTooltip(feature.properties['park_name'], {
+                    className: 'css_MunicipalParks_2',
+                    sticky: true,      
+                    direction: 'auto'
+                });
+
+                layer.on({
+                    mouseover: function(e) { e.target.openTooltip(); },
+                    mouseout: function(e) { e.target.closeTooltip(); }
+                });
+            }
+        }
+
+        function style_MunicipalParks_2_0() {
+            return {
+                pane: 'pane_MunicipalParks_2',
+                opacity: 1,
+                color: 'rgba(37,96,18,1.0)',
+                dashArray: '',
+                lineCap: 'butt',
+                lineJoin: 'miter',
+                weight: 1.0, 
+                fill: true,
+                fillOpacity: 1,
+                fillColor: 'rgba(114,155,111,0.6039215686274509)',
+                interactive: true,
+            }
+        }
+        map.createPane('pane_MunicipalParks_2');
+        map.getPane('pane_MunicipalParks_2').style.zIndex = 402;
+        map.getPane('pane_MunicipalParks_2').style['mix-blend-mode'] = 'normal';
+        var layer_MunicipalParks_2 = new L.geoJson(json_MunicipalParks_2, {
+            pane: 'pane_MunicipalParks_2',
+            onEachFeature: pop_MunicipalParks_2,
+            style: style_MunicipalParks_2_0,
+        });
+        bounds_group.addLayer(layer_MunicipalParks_2);
+        map.addLayer(layer_MunicipalParks_2);
+        function pop_BonningtonScrambler_3(feature, layer) {
+            layer.on({
+                mouseout: function(e) {
+                    for (var i in e.target._eventParents) {
+                        if (typeof e.target._eventParents[i].resetStyle === 'function') {
+                            e.target._eventParents[i].resetStyle(e.target);
+                        }
+                    }
+                },
+                mouseover: highlightFeature,
+            });
+            var popupContent = '<table>\
+                    <tr>\
+                        <th scope="row">name</th>\
+                        <td>' + (feature.properties['name'] !== null ? autolinker.link(String(feature.properties['name']).replace(/'/g, '\'').toLocaleString()) : '') + '</td>\
+                    </tr>\
+                    <tr>\
+                        <th scope="row">Length (km)</th>\
+                        <td>' + (feature.properties['Length'] !== null ? autolinker.link(String(feature.properties['Length']).replace(/'/g, '\'').toLocaleString()) : '') + '</td>\
+                    </tr>\
+                    <tr>\
+                        <th scope="row">Source</th>\
+                        <td>' + (feature.properties['Source'] !== null ? autolinker.link(String(feature.properties['Source']).replace(/'/g, '\'').toLocaleString()) : '') + '</td>\
+                    </tr>\
+                </table>';
+            var content = removeEmptyRowsFromPopupContent(popupContent, feature);
+			layer.on('popupopen', function(e) {
+				addClassToPopupIfMedia(content, e.popup);
+			});
+			layer.bindPopup(content, { maxHeight: 400 });
+        }
+
+        function style_BonningtonScrambler_3_0() {
+            return {
+                pane: 'pane_BonningtonScrambler_3',
+                opacity: 1,
+                color: 'rgba(255,170,23,1.0)',
+                dashArray: '',
+                lineCap: 'square',
+                lineJoin: 'bevel',
+                weight: 2.0,
+                fillOpacity: 0,
+                interactive: true,
+            }
+        }
+        map.createPane('pane_BonningtonScrambler_3');
+        map.getPane('pane_BonningtonScrambler_3').style.zIndex = 403;
+        map.getPane('pane_BonningtonScrambler_3').style['mix-blend-mode'] = 'normal';
+        var layer_BonningtonScrambler_3 = new L.geoJson(json_BonningtonScrambler_3, {
+            attribution: '',
+            interactive: true,
+            dataVar: 'json_BonningtonScrambler_3',
+            layerName: 'layer_BonningtonScrambler_3',
+            pane: 'pane_BonningtonScrambler_3',
+            onEachFeature: pop_BonningtonScrambler_3,
+            style: style_BonningtonScrambler_3_0,
+        });
+        bounds_group.addLayer(layer_BonningtonScrambler_3);
+        function pop_FrogPeakLoop_4(feature, layer) {
+            layer.on({
+                mouseout: function(e) {
+                    for (var i in e.target._eventParents) {
+                        if (typeof e.target._eventParents[i].resetStyle === 'function') {
+                            e.target._eventParents[i].resetStyle(e.target);
+                        }
+                    }
+                },
+                mouseover: highlightFeature,
+            });
+            var popupContent = '<table>\
+                    <tr>\
+                        <th scope="row">name</th>\
+                        <td>' + (feature.properties['name'] !== null ? autolinker.link(String(feature.properties['name']).replace(/'/g, '\'').toLocaleString()) : '') + '</td>\
+                    </tr>\
+                    <tr>\
+                        <th scope="row">Length (km)</th>\
+                        <td>' + (feature.properties['Length'] !== null ? autolinker.link(String(feature.properties['Length']).replace(/'/g, '\'').toLocaleString()) : '') + '</td>\
+                    </tr>\
+                    <tr>\
+                        <th scope="row">Source</th>\
+                        <td>' + (feature.properties['Source'] !== null ? autolinker.link(String(feature.properties['Source']).replace(/'/g, '\'').toLocaleString()) : '') + '</td>\
+                    </tr>\
+                </table>';
+            var content = removeEmptyRowsFromPopupContent(popupContent, feature);
+			layer.on('popupopen', function(e) {
+				addClassToPopupIfMedia(content, e.popup);
+			});
+			layer.bindPopup(content, { maxHeight: 400 });
+        }
+
+        function style_FrogPeakLoop_4_0() {
+            return {
+                pane: 'pane_FrogPeakLoop_4',
+                opacity: 1,
+                color: 'rgba(247,72,33,1.0)',
+                dashArray: '',
+                lineCap: 'square',
+                lineJoin: 'bevel',
+                weight: 2.0,
+                fillOpacity: 0,
+                interactive: true,
+            }
+        }
+        map.createPane('pane_FrogPeakLoop_4');
+        map.getPane('pane_FrogPeakLoop_4').style.zIndex = 404;
+        map.getPane('pane_FrogPeakLoop_4').style['mix-blend-mode'] = 'normal';
+        var layer_FrogPeakLoop_4 = new L.geoJson(json_FrogPeakLoop_4, {
+            attribution: '',
+            interactive: true,
+            dataVar: 'json_FrogPeakLoop_4',
+            layerName: 'layer_FrogPeakLoop_4',
+            pane: 'pane_FrogPeakLoop_4',
+            onEachFeature: pop_FrogPeakLoop_4,
+            style: style_FrogPeakLoop_4_0,
+        });
+        bounds_group.addLayer(layer_FrogPeakLoop_4);
+        function pop_KootenayConfluence_5(feature, layer) {
+            layer.on({
+                mouseout: function(e) {
+                    for (var i in e.target._eventParents) {
+                        if (typeof e.target._eventParents[i].resetStyle === 'function') {
+                            e.target._eventParents[i].resetStyle(e.target);
+                        }
+                    }
+                },
+                mouseover: highlightFeature,
+            });
+            var popupContent = '<table>\
+                    <tr>\
+                        <th scope="row">name</th>\
+                        <td>' + (feature.properties['name'] !== null ? autolinker.link(String(feature.properties['name']).replace(/'/g, '\'').toLocaleString()) : '') + '</td>\
+                    </tr>\
+                    <tr>\
+                        <th scope="row">Length (km)</th>\
+                        <td>' + (feature.properties['Length'] !== null ? autolinker.link(String(feature.properties['Length']).replace(/'/g, '\'').toLocaleString()) : '') + '</td>\
+                    </tr>\
+                    <tr>\
+                        <th scope="row">Source</th>\
+                        <td>' + (feature.properties['Source'] !== null ? autolinker.link(String(feature.properties['Source']).replace(/'/g, '\'').toLocaleString()) : '') + '</td>\
+                    </tr>\
+                </table>';
+            var content = removeEmptyRowsFromPopupContent(popupContent, feature);
+			layer.on('popupopen', function(e) {
+				addClassToPopupIfMedia(content, e.popup);
+			});
+			layer.bindPopup(content, { maxHeight: 400 });
+        }
+
+        function style_KootenayConfluence_5_0() {
+            return {
+                pane: 'pane_KootenayConfluence_5',
+                opacity: 1,
+                color: 'rgba(247,222,33,1.0)',
+                dashArray: '',
+                lineCap: 'square',
+                lineJoin: 'bevel',
+                weight: 2.0,
+                fillOpacity: 0,
+                interactive: true,
+            }
+        }
+        map.createPane('pane_KootenayConfluence_5');
+        map.getPane('pane_KootenayConfluence_5').style.zIndex = 405;
+        map.getPane('pane_KootenayConfluence_5').style['mix-blend-mode'] = 'normal';
+        var layer_KootenayConfluence_5 = new L.geoJson(json_KootenayConfluence_5, {
+            attribution: '',
+            interactive: true,
+            dataVar: 'json_KootenayConfluence_5',
+            layerName: 'layer_KootenayConfluence_5',
+            pane: 'pane_KootenayConfluence_5',
+            onEachFeature: pop_KootenayConfluence_5,
+            style: style_KootenayConfluence_5_0,
+        });
+        bounds_group.addLayer(layer_KootenayConfluence_5);
+        function pop_SantaRosaValleysandVistas_6(feature, layer) {
+            layer.on({
+                mouseout: function(e) {
+                    for (var i in e.target._eventParents) {
+                        if (typeof e.target._eventParents[i].resetStyle === 'function') {
+                            e.target._eventParents[i].resetStyle(e.target);
+                        }
+                    }
+                },
+                mouseover: highlightFeature,
+            });
+            var popupContent = '<table>\
+                    <tr>\
+                        <th scope="row">name</th>\
+                        <td>' + (feature.properties['name'] !== null ? autolinker.link(String(feature.properties['name']).replace(/'/g, '\'').toLocaleString()) : '') + '</td>\
+                    </tr>\
+                    <tr>\
+                        <th scope="row">Length (km)</th>\
+                        <td>' + (feature.properties['Length'] !== null ? autolinker.link(String(feature.properties['Length']).replace(/'/g, '\'').toLocaleString()) : '') + '</td>\
+                    </tr>\
+                    <tr>\
+                        <th scope="row">Source</th>\
+                        <td>' + (feature.properties['Source'] !== null ? autolinker.link(String(feature.properties['Source']).replace(/'/g, '\'').toLocaleString()) : '') + '</td>\
+                    </tr>\
+                </table>';
+            var content = removeEmptyRowsFromPopupContent(popupContent, feature);
+			layer.on('popupopen', function(e) {
+				addClassToPopupIfMedia(content, e.popup);
+			});
+			layer.bindPopup(content, { maxHeight: 400 });
+        }
+
+        function style_SantaRosaValleysandVistas_6_0() {
+            return {
+                pane: 'pane_SantaRosaValleysandVistas_6',
+                opacity: 1,
+                color: 'rgba(132,55,38,1.0)',
+                dashArray: '',
+                lineCap: 'square',
+                lineJoin: 'bevel',
+                weight: 2.0,
+                fillOpacity: 0,
+                interactive: true,
+            }
+        }
+        map.createPane('pane_SantaRosaValleysandVistas_6');
+        map.getPane('pane_SantaRosaValleysandVistas_6').style.zIndex = 406;
+        map.getPane('pane_SantaRosaValleysandVistas_6').style['mix-blend-mode'] = 'normal';
+        var layer_SantaRosaValleysandVistas_6 = new L.geoJson(json_SantaRosaValleysandVistas_6, {
+            attribution: '',
+            interactive: true,
+            dataVar: 'json_SantaRosaValleysandVistas_6',
+            layerName: 'layer_SantaRosaValleysandVistas_6',
+            pane: 'pane_SantaRosaValleysandVistas_6',
+            onEachFeature: pop_SantaRosaValleysandVistas_6,
+            style: style_SantaRosaValleysandVistas_6_0,
+        });
+        bounds_group.addLayer(layer_SantaRosaValleysandVistas_6);
+        function pop_WKCCProposedRoutes_7(feature, layer) {
+            layer.on({
+                mouseout: function(e) {
+                    for (var i in e.target._eventParents) {
+                        if (typeof e.target._eventParents[i].resetStyle === 'function') {
+                            e.target._eventParents[i].resetStyle(e.target);
+                        }
+                    }
+                },
+                mouseover: highlightFeature,
+            });
+            var popupContent = '<table>\
+                    <tr>\
+                        <td colspan="2">' + (feature.properties['fid'] !== null ? autolinker.link(String(feature.properties['fid']).replace(/'/g, '\'').toLocaleString()) : '') + '</td>\
+                    </tr>\
+                    <tr>\
+                        <td colspan="2">' + (feature.properties['priority'] !== null ? autolinker.link(String(feature.properties['priority']).replace(/'/g, '\'').toLocaleString()) : '') + '</td>\
+                    </tr>\
+                    <tr>\
+                        <td colspan="2">' + (feature.properties['type'] !== null ? autolinker.link(String(feature.properties['type']).replace(/'/g, '\'').toLocaleString()) : '') + '</td>\
+                    </tr>\
+                    <tr>\
+                        <td colspan="2">' + (feature.properties['surface'] !== null ? autolinker.link(String(feature.properties['surface']).replace(/'/g, '\'').toLocaleString()) : '') + '</td>\
+                    </tr>\
+                    <tr>\
+                        <td colspan="2">' + (feature.properties['municipality'] !== null ? autolinker.link(String(feature.properties['municipality']).replace(/'/g, '\'').toLocaleString()) : '') + '</td>\
+                    </tr>\
+                    <tr>\
+                        <td colspan="2">' + (feature.properties['shape_length'] !== null ? autolinker.link(String(feature.properties['shape_length']).replace(/'/g, '\'').toLocaleString()) : '') + '</td>\
+                    </tr>\
+                    <tr>\
+                        <td colspan="2">' + (feature.properties['Name'] !== null ? autolinker.link(String(feature.properties['Name']).replace(/'/g, '\'').toLocaleString()) : '') + '</td>\
+                    </tr>\
+                </table>';
+            var content = removeEmptyRowsFromPopupContent(popupContent, feature);
+			layer.on('popupopen', function(e) {
+				addClassToPopupIfMedia(content, e.popup);
+			});
+			layer.bindPopup(content, { maxHeight: 400 });
+        }
+
+        function style_WKCCProposedRoutes_7_0() {
+            return {
+                pane: 'pane_WKCCProposedRoutes_7',
+                opacity: 1,
+                color: 'rgba(252,0,0,1.0)',
+                dashArray: '4.0,2.0',
+                lineCap: 'square',
+                lineJoin: 'bevel',
+                weight: 1.0,
+                fillOpacity: 0,
+                interactive: false,
+            }
+        }
+        map.createPane('pane_WKCCProposedRoutes_7');
+        map.getPane('pane_WKCCProposedRoutes_7').style.zIndex = 407;
+        map.getPane('pane_WKCCProposedRoutes_7').style['mix-blend-mode'] = 'normal';
+        var layer_WKCCProposedRoutes_7 = new L.geoJson(json_WKCCProposedRoutes_7, {
+            attribution: '',
+            interactive: false,
+            dataVar: 'json_WKCCProposedRoutes_7',
+            layerName: 'layer_WKCCProposedRoutes_7',
+            pane: 'pane_WKCCProposedRoutes_7',
+            onEachFeature: pop_WKCCProposedRoutes_7,
+            style: style_WKCCProposedRoutes_7_0,
+        });
+        bounds_group.addLayer(layer_WKCCProposedRoutes_7);
+        map.addLayer(layer_WKCCProposedRoutes_7);
+        function pop_WKCCExistingRoutes_8(feature, layer) {
+            layer.on({
+                mouseout: function(e) {
+                    for (var i in e.target._eventParents) {
+                        if (typeof e.target._eventParents[i].resetStyle === 'function') {
+                            e.target._eventParents[i].resetStyle(e.target);
+                        }
+                    }
+                },
+                mouseover: highlightFeature,
+            });
+            var popupContent = '<table>\
+                    <tr>\
+                        <td class="visible-with-data" id="Name" colspan="2"><strong>Name</strong><br />' + (feature.properties['Name'] !== null ? autolinker.link(String(feature.properties['Name']).replace(/'/g, '\'').toLocaleString()) : '') + '</td>\
+                    </tr>\
+                    <tr>\
+                        <th scope="row">Network</th>\
+                        <td class="visible-with-data" id="Tenure">' + (feature.properties['Tenure'] !== null ? autolinker.link(String(feature.properties['Tenure']).replace(/'/g, '\'').toLocaleString()) : '') + '</td>\
+                    </tr>\
+                    <tr>\
+                        <th scope="row">Type</th>\
+                        <td class="visible-with-data" id="Type">' + (feature.properties['Type'] !== null ? autolinker.link(String(feature.properties['Type']).replace(/'/g, '\'').toLocaleString()) : '') + '</td>\
+                    </tr>\
+                    <tr>\
+                        <th scope="row">Source</th>\
+                        <td class="visible-with-data" id="Source">' + (feature.properties['Source'] !== null ? autolinker.link(String(feature.properties['Source']).replace(/'/g, '\'').toLocaleString()) : '') + '</td>\
+                    </tr>\
+                    <tr>\
+                        <th scope="row">Community</th>\
+                        <td class="visible-with-data" id="Community">' + (feature.properties['Community'] !== null ? autolinker.link(String(feature.properties['Community']).replace(/'/g, '\'').toLocaleString()) : '') + '</td>\
+                    </tr>\
+                    <tr>\
+                        <th scope="row">Length (km)</th>\
+                        <td class="visible-with-data" id="Shape_length">' + (feature.properties['Shape_length'] !== null ? autolinker.link(String(feature.properties['Shape_length']).replace(/'/g, '\'').toLocaleString()) : '') + '</td>\
+                    </tr>\
+                    <tr>\
+                        <th scope="row">Description</th>\
+                        <td class="visible-with-data" id="description">' + (feature.properties['description'] !== null ? autolinker.link(String(feature.properties['description']).replace(/'/g, '\'').toLocaleString()) : '') + '</td>\
+                    </tr>\
+                    <tr>\
+                        <th scope="row">Surface</th>\
+                        <td class="visible-with-data" id="Surface">' + (feature.properties['Surface'] !== null ? autolinker.link(String(feature.properties['Surface']).replace(/'/g, '\'').toLocaleString()) : '') + '</td>\
+                    </tr>\
+                    <tr>\
+                        <th scope="row">Trans Canada Trail</th>\
+                        <td class="visible-with-data" id="Trans_Canada_Trail">' + (feature.properties['Trans_Canada_Trail'] !== null ? autolinker.link(String(feature.properties['Trans_Canada_Trail']).replace(/'/g, '\'').toLocaleString()) : '') + '</td>\
+                    </tr>\
+                </table>';
+            var content = removeEmptyRowsFromPopupContent(popupContent, feature);
+			layer.on('popupopen', function(e) {
+				addClassToPopupIfMedia(content, e.popup);
+			});
+			layer.bindPopup(content, { maxHeight: 400 });
+        }
+
+        function style_WKCCExistingRoutes_8_0() {
+            return {
+                pane: 'pane_WKCCExistingRoutes_8',
+                opacity: 0.9,
+                color: 'rgba(17,116,6,1.0)',
+                dashArray: '',
+                lineCap: 'square',
+                lineJoin: 'bevel',
+                weight: 2.0,
+                fillOpacity: 0,
+                interactive: true,
+            }
+        }
+        map.createPane('pane_WKCCExistingRoutes_8');
+        map.getPane('pane_WKCCExistingRoutes_8').style.zIndex = 408;
+        map.getPane('pane_WKCCExistingRoutes_8').style['mix-blend-mode'] = 'normal';
+        var layer_WKCCExistingRoutes_8 = new L.geoJson(json_WKCCExistingRoutes_8, {
+            attribution: '',
+            interactive: true,
+            dataVar: 'json_WKCCExistingRoutes_8',
+            layerName: 'layer_WKCCExistingRoutes_8',
+            pane: 'pane_WKCCExistingRoutes_8',
+            onEachFeature: pop_WKCCExistingRoutes_8,
+            style: style_WKCCExistingRoutes_8_0,
+        });
+        bounds_group.addLayer(layer_WKCCExistingRoutes_8);
+        map.addLayer(layer_WKCCExistingRoutes_8);
+        function pop_MunnicipalBoundaries_9(feature, layer) {
+            layer.on({
+                mouseout: function(e) {
+                    for (var i in e.target._eventParents) {
+                        if (typeof e.target._eventParents[i].resetStyle === 'function') {
+                            e.target._eventParents[i].resetStyle(e.target);
+                        }
+                    }
+                },
+                mouseover: highlightFeature,
+            });
+            var popupContent = '<table>\
+                    <tr>\
+                        <td colspan="2">' + (feature.properties['fid'] !== null ? autolinker.link(String(feature.properties['fid']).replace(/'/g, '\'').toLocaleString()) : '') + '</td>\
+                    </tr>\
+                    <tr>\
+                        <td colspan="2">' + (feature.properties['id'] !== null ? autolinker.link(String(feature.properties['id']).replace(/'/g, '\'').toLocaleString()) : '') + '</td>\
+                    </tr>\
+                    <tr>\
+                        <td colspan="2">' + (feature.properties['metadataproperty'] !== null ? autolinker.link(String(feature.properties['metadataproperty']).replace(/'/g, '\'').toLocaleString()) : '') + '</td>\
+                    </tr>\
+                    <tr>\
+                        <td colspan="2">' + (feature.properties['description_href'] !== null ? autolinker.link(String(feature.properties['description_href']).replace(/'/g, '\'').toLocaleString()) : '') + '</td>\
+                    </tr>\
+                    <tr>\
+                        <td colspan="2">' + (feature.properties['description_title'] !== null ? autolinker.link(String(feature.properties['description_title']).replace(/'/g, '\'').toLocaleString()) : '') + '</td>\
+                    </tr>\
+                    <tr>\
+                        <td colspan="2">' + (feature.properties['description_nilreason'] !== null ? autolinker.link(String(feature.properties['description_nilreason']).replace(/'/g, '\'').toLocaleString()) : '') + '</td>\
+                    </tr>\
+                    <tr>\
+                        <td colspan="2">' + (feature.properties['description'] !== null ? autolinker.link(String(feature.properties['description']).replace(/'/g, '\'').toLocaleString()) : '') + '</td>\
+                    </tr>\
+                    <tr>\
+                        <td colspan="2">' + (feature.properties['descriptionreference_href'] !== null ? autolinker.link(String(feature.properties['descriptionreference_href']).replace(/'/g, '\'').toLocaleString()) : '') + '</td>\
+                    </tr>\
+                    <tr>\
+                        <td colspan="2">' + (feature.properties['descriptionreference_title'] !== null ? autolinker.link(String(feature.properties['descriptionreference_title']).replace(/'/g, '\'').toLocaleString()) : '') + '</td>\
+                    </tr>\
+                    <tr>\
+                        <td colspan="2">' + (feature.properties['descriptionreference_nilreason'] !== null ? autolinker.link(String(feature.properties['descriptionreference_nilreason']).replace(/'/g, '\'').toLocaleString()) : '') + '</td>\
+                    </tr>\
+                    <tr>\
+                        <td colspan="2">' + (feature.properties['identifier_codespace'] !== null ? autolinker.link(String(feature.properties['identifier_codespace']).replace(/'/g, '\'').toLocaleString()) : '') + '</td>\
+                    </tr>\
+                    <tr>\
+                        <td colspan="2">' + (feature.properties['identifier'] !== null ? autolinker.link(String(feature.properties['identifier']).replace(/'/g, '\'').toLocaleString()) : '') + '</td>\
+                    </tr>\
+                    <tr>\
+                        <td colspan="2">' + (feature.properties['name'] !== null ? autolinker.link(String(feature.properties['name']).replace(/'/g, '\'').toLocaleString()) : '') + '</td>\
+                    </tr>\
+                    <tr>\
+                        <td colspan="2">' + (feature.properties['location_location'] !== null ? autolinker.link(String(feature.properties['location_location']).replace(/'/g, '\'').toLocaleString()) : '') + '</td>\
+                    </tr>\
+                    <tr>\
+                        <td colspan="2">' + (feature.properties['lgl_admin_area_id'] !== null ? autolinker.link(String(feature.properties['lgl_admin_area_id']).replace(/'/g, '\'').toLocaleString()) : '') + '</td>\
+                    </tr>\
+                    <tr>\
+                        <td colspan="2">' + (feature.properties['admin_area_name'] !== null ? autolinker.link(String(feature.properties['admin_area_name']).replace(/'/g, '\'').toLocaleString()) : '') + '</td>\
+                    </tr>\
+                    <tr>\
+                        <td colspan="2">' + (feature.properties['admin_area_name_nil'] !== null ? autolinker.link(String(feature.properties['admin_area_name_nil']).replace(/'/g, '\'').toLocaleString()) : '') + '</td>\
+                    </tr>\
+                    <tr>\
+                        <td colspan="2">' + (feature.properties['admin_area_abbreviation'] !== null ? autolinker.link(String(feature.properties['admin_area_abbreviation']).replace(/'/g, '\'').toLocaleString()) : '') + '</td>\
+                    </tr>\
+                    <tr>\
+                        <td colspan="2">' + (feature.properties['admin_area_abbreviation_nil'] !== null ? autolinker.link(String(feature.properties['admin_area_abbreviation_nil']).replace(/'/g, '\'').toLocaleString()) : '') + '</td>\
+                    </tr>\
+                    <tr>\
+                        <td colspan="2">' + (feature.properties['admin_area_boundary_type'] !== null ? autolinker.link(String(feature.properties['admin_area_boundary_type']).replace(/'/g, '\'').toLocaleString()) : '') + '</td>\
+                    </tr>\
+                    <tr>\
+                        <td colspan="2">' + (feature.properties['admin_area_boundary_type_nil'] !== null ? autolinker.link(String(feature.properties['admin_area_boundary_type_nil']).replace(/'/g, '\'').toLocaleString()) : '') + '</td>\
+                    </tr>\
+                    <tr>\
+                        <td colspan="2">' + (feature.properties['admin_area_group_name'] !== null ? autolinker.link(String(feature.properties['admin_area_group_name']).replace(/'/g, '\'').toLocaleString()) : '') + '</td>\
+                    </tr>\
+                    <tr>\
+                        <td colspan="2">' + (feature.properties['admin_area_group_name_nil'] !== null ? autolinker.link(String(feature.properties['admin_area_group_name_nil']).replace(/'/g, '\'').toLocaleString()) : '') + '</td>\
+                    </tr>\
+                    <tr>\
+                        <td colspan="2">' + (feature.properties['change_requested_org'] !== null ? autolinker.link(String(feature.properties['change_requested_org']).replace(/'/g, '\'').toLocaleString()) : '') + '</td>\
+                    </tr>\
+                    <tr>\
+                        <td colspan="2">' + (feature.properties['change_requested_org_nil'] !== null ? autolinker.link(String(feature.properties['change_requested_org_nil']).replace(/'/g, '\'').toLocaleString()) : '') + '</td>\
+                    </tr>\
+                    <tr>\
+                        <td colspan="2">' + (feature.properties['update_type'] !== null ? autolinker.link(String(feature.properties['update_type']).replace(/'/g, '\'').toLocaleString()) : '') + '</td>\
+                    </tr>\
+                    <tr>\
+                        <td colspan="2">' + (feature.properties['update_type_nil'] !== null ? autolinker.link(String(feature.properties['update_type_nil']).replace(/'/g, '\'').toLocaleString()) : '') + '</td>\
+                    </tr>\
+                    <tr>\
+                        <td colspan="2">' + (feature.properties['when_updated'] !== null ? autolinker.link(String(feature.properties['when_updated']).replace(/'/g, '\'').toLocaleString()) : '') + '</td>\
+                    </tr>\
+                    <tr>\
+                        <td colspan="2">' + (feature.properties['when_updated_nil'] !== null ? autolinker.link(String(feature.properties['when_updated_nil']).replace(/'/g, '\'').toLocaleString()) : '') + '</td>\
+                    </tr>\
+                    <tr>\
+                        <td colspan="2">' + (feature.properties['map_status'] !== null ? autolinker.link(String(feature.properties['map_status']).replace(/'/g, '\'').toLocaleString()) : '') + '</td>\
+                    </tr>\
+                    <tr>\
+                        <td colspan="2">' + (feature.properties['map_status_nil'] !== null ? autolinker.link(String(feature.properties['map_status_nil']).replace(/'/g, '\'').toLocaleString()) : '') + '</td>\
+                    </tr>\
+                    <tr>\
+                        <td colspan="2">' + (feature.properties['oic_mo_number'] !== null ? autolinker.link(String(feature.properties['oic_mo_number']).replace(/'/g, '\'').toLocaleString()) : '') + '</td>\
+                    </tr>\
+                    <tr>\
+                        <td colspan="2">' + (feature.properties['oic_mo_number_nil'] !== null ? autolinker.link(String(feature.properties['oic_mo_number_nil']).replace(/'/g, '\'').toLocaleString()) : '') + '</td>\
+                    </tr>\
+                    <tr>\
+                        <td colspan="2">' + (feature.properties['oic_mo_year'] !== null ? autolinker.link(String(feature.properties['oic_mo_year']).replace(/'/g, '\'').toLocaleString()) : '') + '</td>\
+                    </tr>\
+                    <tr>\
+                        <td colspan="2">' + (feature.properties['oic_mo_year_nil'] !== null ? autolinker.link(String(feature.properties['oic_mo_year_nil']).replace(/'/g, '\'').toLocaleString()) : '') + '</td>\
+                    </tr>\
+                    <tr>\
+                        <td colspan="2">' + (feature.properties['oic_mo_type'] !== null ? autolinker.link(String(feature.properties['oic_mo_type']).replace(/'/g, '\'').toLocaleString()) : '') + '</td>\
+                    </tr>\
+                    <tr>\
+                        <td colspan="2">' + (feature.properties['oic_mo_type_nil'] !== null ? autolinker.link(String(feature.properties['oic_mo_type_nil']).replace(/'/g, '\'').toLocaleString()) : '') + '</td>\
+                    </tr>\
+                    <tr>\
+                        <td colspan="2">' + (feature.properties['website_url'] !== null ? autolinker.link(String(feature.properties['website_url']).replace(/'/g, '\'').toLocaleString()) : '') + '</td>\
+                    </tr>\
+                    <tr>\
+                        <td colspan="2">' + (feature.properties['website_url_nil'] !== null ? autolinker.link(String(feature.properties['website_url_nil']).replace(/'/g, '\'').toLocaleString()) : '') + '</td>\
+                    </tr>\
+                    <tr>\
+                        <td colspan="2">' + (feature.properties['image_url'] !== null ? autolinker.link(String(feature.properties['image_url']).replace(/'/g, '\'').toLocaleString()) : '') + '</td>\
+                    </tr>\
+                    <tr>\
+                        <td colspan="2">' + (feature.properties['image_url_nil'] !== null ? autolinker.link(String(feature.properties['image_url_nil']).replace(/'/g, '\'').toLocaleString()) : '') + '</td>\
+                    </tr>\
+                    <tr>\
+                        <td colspan="2">' + (feature.properties['affected_admin_area_abrvn'] !== null ? autolinker.link(String(feature.properties['affected_admin_area_abrvn']).replace(/'/g, '\'').toLocaleString()) : '') + '</td>\
+                    </tr>\
+                    <tr>\
+                        <td colspan="2">' + (feature.properties['affected_admin_area_abrvn_nil'] !== null ? autolinker.link(String(feature.properties['affected_admin_area_abrvn_nil']).replace(/'/g, '\'').toLocaleString()) : '') + '</td>\
+                    </tr>\
+                    <tr>\
+                        <td colspan="2">' + (feature.properties['feature_area_sqm'] !== null ? autolinker.link(String(feature.properties['feature_area_sqm']).replace(/'/g, '\'').toLocaleString()) : '') + '</td>\
+                    </tr>\
+                    <tr>\
+                        <td colspan="2">' + (feature.properties['feature_area_sqm_nil'] !== null ? autolinker.link(String(feature.properties['feature_area_sqm_nil']).replace(/'/g, '\'').toLocaleString()) : '') + '</td>\
+                    </tr>\
+                    <tr>\
+                        <td colspan="2">' + (feature.properties['feature_length_m'] !== null ? autolinker.link(String(feature.properties['feature_length_m']).replace(/'/g, '\'').toLocaleString()) : '') + '</td>\
+                    </tr>\
+                    <tr>\
+                        <td colspan="2">' + (feature.properties['feature_length_m_nil'] !== null ? autolinker.link(String(feature.properties['feature_length_m_nil']).replace(/'/g, '\'').toLocaleString()) : '') + '</td>\
+                    </tr>\
+                    <tr>\
+                        <td colspan="2">' + (feature.properties['objectid'] !== null ? autolinker.link(String(feature.properties['objectid']).replace(/'/g, '\'').toLocaleString()) : '') + '</td>\
+                    </tr>\
+                    <tr>\
+                        <td colspan="2">' + (feature.properties['se_anno_cad_data'] !== null ? autolinker.link(String(feature.properties['se_anno_cad_data']).replace(/'/g, '\'').toLocaleString()) : '') + '</td>\
+                    </tr>\
+                    <tr>\
+                        <td colspan="2">' + (feature.properties['se_anno_cad_data_nil'] !== null ? autolinker.link(String(feature.properties['se_anno_cad_data_nil']).replace(/'/g, '\'').toLocaleString()) : '') + '</td>\
+                    </tr>\
+                </table>';
+            var content = removeEmptyRowsFromPopupContent(popupContent, feature);
+			layer.on('popupopen', function(e) {
+				addClassToPopupIfMedia(content, e.popup);
+			});
+			layer.bindPopup(content, { maxHeight: 400 });
+        }
+
+        function style_MunnicipalBoundaries_9_0() {
+            return {
+                pane: 'pane_MunnicipalBoundaries_9',
+                opacity: 0.3,
+                color: 'rgba(255,142,37,1.0)',
+                dashArray: '10.0,2.0,4.0,2.0',
+                lineCap: 'butt',
+                lineJoin: 'miter',
+                weight: 2.0, 
+                fill: true,
+                fillOpacity: 1,
+                fillColor: 'rgba(255,158,23,0.0)',
+                interactive: false,
+            }
+        }
+        map.createPane('pane_MunnicipalBoundaries_9');
+        map.getPane('pane_MunnicipalBoundaries_9').style.zIndex = 409;
+        map.getPane('pane_MunnicipalBoundaries_9').style['mix-blend-mode'] = 'normal';
+        var layer_MunnicipalBoundaries_9 = new L.geoJson(json_MunnicipalBoundaries_9, {
+            attribution: '',
+            interactive: false,
+            dataVar: 'json_MunnicipalBoundaries_9',
+            layerName: 'layer_MunnicipalBoundaries_9',
+            pane: 'pane_MunnicipalBoundaries_9',
+            onEachFeature: pop_MunnicipalBoundaries_9,
+            style: style_MunnicipalBoundaries_9_0,
+        });
+        bounds_group.addLayer(layer_MunnicipalBoundaries_9);
+        map.addLayer(layer_MunnicipalBoundaries_9);
+        function pop_BCTransitStops_10(feature, layer) {
+            layer.on({
+                mouseout: function(e) {
+                    for (var i in e.target._eventParents) {
+                        if (typeof e.target._eventParents[i].resetStyle === 'function') {
+                            e.target._eventParents[i].resetStyle(e.target);
+                        }
+                    }
+                },
+                mouseover: highlightFeature,
+            });
+            var popupContent = '<table>\
+                    <tr>\
+                        <td class="visible-with-data" id="stop_name" colspan="2"><strong>Stop Name</strong><br />' + (feature.properties['stop_name'] !== null ? autolinker.link(String(feature.properties['stop_name']).replace(/'/g, '\'').toLocaleString()) : '') + '</td>\
+                    </tr>\
+                </table>';
+            var content = removeEmptyRowsFromPopupContent(popupContent, feature);
+			layer.on('popupopen', function(e) {
+				addClassToPopupIfMedia(content, e.popup);
+			});
+			layer.bindPopup(content, { maxHeight: 400 });
+        }
+
+        function style_BCTransitStops_10_0() {
+            return {
+                pane: 'pane_BCTransitStops_10',
+        rotationAngle: 0.0,
+        rotationOrigin: 'center center',
+        icon: L.icon({
+            iconUrl: 'markers/BCTransitStops_10.svg',
+            iconSize: [15.2, 15.2]
+        }),
+                interactive: true,
+            }
+        }
+        map.createPane('pane_BCTransitStops_10');
+        map.getPane('pane_BCTransitStops_10').style.zIndex = 410;
+        map.getPane('pane_BCTransitStops_10').style['mix-blend-mode'] = 'normal';
+        var layer_BCTransitStops_10 = new L.geoJson(json_BCTransitStops_10, {
+            attribution: '',
+            interactive: true,
+            dataVar: 'json_BCTransitStops_10',
+            layerName: 'layer_BCTransitStops_10',
+            pane: 'pane_BCTransitStops_10',
+            onEachFeature: pop_BCTransitStops_10,
+            pointToLayer: function (feature, latlng) {
+                var context = {
+                    feature: feature,
+                    variables: {}
+                };
+                return L.marker(latlng, style_BCTransitStops_10_0(feature));
+            },
+        });
+        bounds_group.addLayer(layer_BCTransitStops_10);
+        map.addLayer(layer_BCTransitStops_10);
+        function pop_Rec_Sites_WestKootsRecSites_11(feature, layer) {
+            layer.on({
+                mouseout: function(e) {
+                    for (var i in e.target._eventParents) {
+                        if (typeof e.target._eventParents[i].resetStyle === 'function') {
+                            e.target._eventParents[i].resetStyle(e.target);
+                        }
+                    }
+                },
+                mouseover: highlightFeature,
+            });
+            var popupContent = '<table>\
+                    <tr>\
+                        <th scope="row">Name</th>\
+                        <td>' + (feature.properties['project_name'] !== null ? autolinker.link(String(feature.properties['project_name']).replace(/'/g, '\'').toLocaleString()) : '') + '</td>\
+                    </tr>\
+                    <tr>\
+                        <th scope="row">Number of Camp Sites</th>\
+                        <td>' + (feature.properties['num_camp_sites'] !== null ? autolinker.link(String(feature.properties['num_camp_sites']).replace(/'/g, '\'').toLocaleString()) : '') + '</td>\
+                    </tr>\
+                    <tr>\
+                        <th scope="row">Description</th>\
+                        <td>' + (feature.properties['project_description'] !== null ? autolinker.link(String(feature.properties['project_description']).replace(/'/g, '\'').toLocaleString()) : '') + '</td>\
+                    </tr>\
+                </table>';
+            var content = removeEmptyRowsFromPopupContent(popupContent, feature);
+			layer.on('popupopen', function(e) {
+				addClassToPopupIfMedia(content, e.popup);
+			});
+			layer.bindPopup(content, { maxHeight: 400 });
+        }
+
+        function style_Rec_Sites_WestKootsRecSites_11_0() {
+            return {
+                pane: 'pane_Rec_Sites_WestKootsRecSites_11',
+                shape: 'triangle',
+                radius: 3.7,
+                opacity: 1,
+                color: 'rgba(255,255,255,0.0)',
+                dashArray: '',
+                lineCap: 'butt',
+                lineJoin: 'miter',
+                weight: 2.0,
+                fill: true,
+                fillOpacity: 1,
+                fillColor: 'rgba(0,0,0,1.0)',
+                interactive: true,
+            }
+        }
+        map.createPane('pane_Rec_Sites_WestKootsRecSites_11');
+        map.getPane('pane_Rec_Sites_WestKootsRecSites_11').style.zIndex = 411;
+        map.getPane('pane_Rec_Sites_WestKootsRecSites_11').style['mix-blend-mode'] = 'normal';
+        var layer_Rec_Sites_WestKootsRecSites_11 = new L.geoJson(json_Rec_Sites_WestKootsRecSites_11, {
+            attribution: '',
+            interactive: true,
+            dataVar: 'json_Rec_Sites_WestKootsRecSites_11',
+            layerName: 'layer_Rec_Sites_WestKootsRecSites_11',
+            pane: 'pane_Rec_Sites_WestKootsRecSites_11',
+            onEachFeature: pop_Rec_Sites_WestKootsRecSites_11,
+            pointToLayer: function (feature, latlng) {
+                var context = {
+                    feature: feature,
+                    variables: {}
+                };
+                return L.shapeMarker(latlng, style_Rec_Sites_WestKootsRecSites_11_0(feature));
+            },
+        });
+        bounds_group.addLayer(layer_Rec_Sites_WestKootsRecSites_11);
+        map.addLayer(layer_Rec_Sites_WestKootsRecSites_11);
+        function pop_BikeShops_12(feature, layer) {
+            layer.on({
+                mouseout: function(e) {
+                    for (var i in e.target._eventParents) {
+                        if (typeof e.target._eventParents[i].resetStyle === 'function') {
+                            e.target._eventParents[i].resetStyle(e.target);
+                        }
+                    }
+                },
+                mouseover: highlightFeature,
+            });
+            var popupContent = '<table>\
+                    <tr>\
+                        <th scope="row">Name</th>\
+                        <td class="visible-with-data" id="Name">' + (feature.properties['Name'] !== null ? autolinker.link(String(feature.properties['Name']).replace(/'/g, '\'').toLocaleString()) : '') + '</td>\
+                    </tr>\
+                    <tr>\
+                        <th scope="row">StreetAddress</th>\
+                        <td class="visible-with-data" id="StreetAddress">' + (feature.properties['StreetAddress'] !== null ? autolinker.link(String(feature.properties['StreetAddress']).replace(/'/g, '\'').toLocaleString()) : '') + '</td>\
+                    </tr>\
+                    <tr>\
+                        <th scope="row">City</th>\
+                        <td class="visible-with-data" id="City">' + (feature.properties['City'] !== null ? autolinker.link(String(feature.properties['City']).replace(/'/g, '\'').toLocaleString()) : '') + '</td>\
+                    </tr>\
+                    <tr>\
+                        <th scope="row">Province</th>\
+                        <td class="visible-with-data" id="Province">' + (feature.properties['Province'] !== null ? autolinker.link(String(feature.properties['Province']).replace(/'/g, '\'').toLocaleString()) : '') + '</td>\
+                    </tr>\
+                    <tr>\
+                        <th scope="row">PostalCode</th>\
+                        <td class="visible-with-data" id="PostalCode">' + (feature.properties['PostalCode'] !== null ? autolinker.link(String(feature.properties['PostalCode']).replace(/'/g, '\'').toLocaleString()) : '') + '</td>\
+                    </tr>\
+                    <tr>\
+                        <th scope="row">PhoneNumber</th>\
+                        <td class="visible-with-data" id="PhoneNumber">' + (feature.properties['PhoneNumber'] !== null ? autolinker.link(String(feature.properties['PhoneNumber']).replace(/'/g, '\'').toLocaleString()) : '') + '</td>\
+                    </tr>\
+                    <tr>\
+                        <th scope="row">URL</th>\
+                        <td class="visible-with-data" id="URL">' + (feature.properties['URL'] !== null ? autolinker.link(String(feature.properties['URL']).replace(/'/g, '\'').toLocaleString()) : '') + '</td>\
+                    </tr>\
+                </table>';
+            var content = removeEmptyRowsFromPopupContent(popupContent, feature);
+			layer.on('popupopen', function(e) {
+				addClassToPopupIfMedia(content, e.popup);
+			});
+			layer.bindPopup(content, { maxHeight: 400 });
+        }
+
+        function style_BikeShops_12_0() {
+            return {
+                pane: 'pane_BikeShops_12',
+        rotationAngle: 0.0,
+        rotationOrigin: 'center center',
+        icon: L.icon({
+            iconUrl: 'markers/BikeShops_12.svg',
+            iconSize: [19.0, 19.0]
+        }),
+                interactive: true,
+            }
+        }
+        map.createPane('pane_BikeShops_12');
+        map.getPane('pane_BikeShops_12').style.zIndex = 412;
+        map.getPane('pane_BikeShops_12').style['mix-blend-mode'] = 'normal';
+        var layer_BikeShops_12 = new L.geoJson(json_BikeShops_12, {
+            attribution: '',
+            interactive: true,
+            dataVar: 'json_BikeShops_12',
+            layerName: 'layer_BikeShops_12',
+            pane: 'pane_BikeShops_12',
+            onEachFeature: pop_BikeShops_12,
+            pointToLayer: function (feature, latlng) {
+                var context = {
+                    feature: feature,
+                    variables: {}
+                };
+                return L.marker(latlng, style_BikeShops_12_0(feature));
+            },
+        });
+        bounds_group.addLayer(layer_BikeShops_12);
+        map.addLayer(layer_BikeShops_12);
+        function pop_RegionalDistricts_13(feature, layer) {
+            layer.on({
+                mouseout: function(e) {
+                    for (var i in e.target._eventParents) {
+                        if (typeof e.target._eventParents[i].resetStyle === 'function') {
+                            e.target._eventParents[i].resetStyle(e.target);
+                        }
+                    }
+                },
+                mouseover: highlightFeature,
+            });
+            var popupContent = '<table>\
+                    <tr>\
+                        <td colspan="2">' + (feature.properties['fid'] !== null ? autolinker.link(String(feature.properties['fid']).replace(/'/g, '\'').toLocaleString()) : '') + '</td>\
+                    </tr>\
+                    <tr>\
+                        <td colspan="2">' + (feature.properties['objectid'] !== null ? autolinker.link(String(feature.properties['objectid']).replace(/'/g, '\'').toLocaleString()) : '') + '</td>\
+                    </tr>\
+                    <tr>\
+                        <td colspan="2">' + (feature.properties['shape_length'] !== null ? autolinker.link(String(feature.properties['shape_length']).replace(/'/g, '\'').toLocaleString()) : '') + '</td>\
+                    </tr>\
+                    <tr>\
+                        <td colspan="2">' + (feature.properties['shape_area'] !== null ? autolinker.link(String(feature.properties['shape_area']).replace(/'/g, '\'').toLocaleString()) : '') + '</td>\
+                    </tr>\
+                    <tr>\
+                        <td colspan="2">' + (feature.properties['layer'] !== null ? autolinker.link(String(feature.properties['layer']).replace(/'/g, '\'').toLocaleString()) : '') + '</td>\
+                    </tr>\
+                    <tr>\
+                        <td colspan="2">' + (feature.properties['path'] !== null ? autolinker.link(String(feature.properties['path']).replace(/'/g, '\'').toLocaleString()) : '') + '</td>\
+                    </tr>\
+                    <tr>\
+                        <td colspan="2">' + (feature.properties['Name'] !== null ? autolinker.link(String(feature.properties['Name']).replace(/'/g, '\'').toLocaleString()) : '') + '</td>\
+                    </tr>\
+                </table>';
+            var content = removeEmptyRowsFromPopupContent(popupContent, feature);
+			layer.on('popupopen', function(e) {
+				addClassToPopupIfMedia(content, e.popup);
+			});
+			layer.bindPopup(content, { maxHeight: 400 });
+        }
+
+        function style_RegionalDistricts_13_0() {
+            return {
+                pane: 'pane_RegionalDistricts_13',
+                opacity: 1,
+                color: 'rgba(128,128,128,1.0)',
+                dashArray: '15.0,3.0,6.0,3.0',
+                lineCap: 'butt',
+                lineJoin: 'miter',
+                weight: 3.0, 
+                fillOpacity: 0,
+                interactive: false,
+            }
+        }
+        map.createPane('pane_RegionalDistricts_13');
+        map.getPane('pane_RegionalDistricts_13').style.zIndex = 413;
+        map.getPane('pane_RegionalDistricts_13').style['mix-blend-mode'] = 'normal';
+        var layer_RegionalDistricts_13 = new L.geoJson(json_RegionalDistricts_13, {
+            attribution: '',
+            interactive: false,
+            dataVar: 'json_RegionalDistricts_13',
+            layerName: 'layer_RegionalDistricts_13',
+            pane: 'pane_RegionalDistricts_13',
+            onEachFeature: pop_RegionalDistricts_13,
+            style: style_RegionalDistricts_13_0,
+        });
+        bounds_group.addLayer(layer_RegionalDistricts_13);
+        map.addLayer(layer_RegionalDistricts_13);
+        map.on("zoomend", function(e) {
+            if (map.getZoom() <= 19 && map.getZoom() >= 12) {
+                map.addLayer(layer_MunicipalParks_2);
+            } else if (map.getZoom() > 19 || map.getZoom() < 12) {
+                map.removeLayer(layer_MunicipalParks_2);
+            }
+            if (map.getZoom() <= 19 && map.getZoom() >= 12) {
+                map.addLayer(layer_WKCCProposedRoutes_7);
+            } else if (map.getZoom() > 19 || map.getZoom() < 12) {
+                map.removeLayer(layer_WKCCProposedRoutes_7);
+            }
+            if (map.getZoom() <= 19 && map.getZoom() >= 9) {
+                map.addLayer(layer_WKCCExistingRoutes_8);
+            } else if (map.getZoom() > 19 || map.getZoom() < 9) {
+                map.removeLayer(layer_WKCCExistingRoutes_8);
+            }
+            if (map.getZoom() <= 19 && map.getZoom() >= 12) {
+                map.addLayer(layer_MunnicipalBoundaries_9);
+            } else if (map.getZoom() > 19 || map.getZoom() < 12) {
+                map.removeLayer(layer_MunnicipalBoundaries_9);
+            }
+            if (map.getZoom() <= 19 && map.getZoom() >= 14) {
+                map.addLayer(layer_BCTransitStops_10);
+            } else if (map.getZoom() > 19 || map.getZoom() < 14) {
+                map.removeLayer(layer_BCTransitStops_10);
+            }
+            if (map.getZoom() <= 19 && map.getZoom() >= 10) {
+                map.addLayer(layer_Rec_Sites_WestKootsRecSites_11);
+            } else if (map.getZoom() > 19 || map.getZoom() < 10) {
+                map.removeLayer(layer_Rec_Sites_WestKootsRecSites_11);
+            }
+            if (map.getZoom() <= 19 && map.getZoom() >= 10) {
+                map.addLayer(layer_BikeShops_12);
+            } else if (map.getZoom() > 19 || map.getZoom() < 10) {
+                map.removeLayer(layer_BikeShops_12);
+            }
+        });
+            if (map.getZoom() <= 19 && map.getZoom() >= 12) {
+                map.addLayer(layer_MunicipalParks_2);
+            } else if (map.getZoom() > 19 || map.getZoom() < 12) {
+                map.removeLayer(layer_MunicipalParks_2);
+            }
+            if (map.getZoom() <= 19 && map.getZoom() >= 12) {
+                map.addLayer(layer_WKCCProposedRoutes_7);
+            } else if (map.getZoom() > 19 || map.getZoom() < 12) {
+                map.removeLayer(layer_WKCCProposedRoutes_7);
+            }
+            if (map.getZoom() <= 19 && map.getZoom() >= 9) {
+                map.addLayer(layer_WKCCExistingRoutes_8);
+            } else if (map.getZoom() > 19 || map.getZoom() < 9) {
+                map.removeLayer(layer_WKCCExistingRoutes_8);
+            }
+            if (map.getZoom() <= 19 && map.getZoom() >= 12) {
+                map.addLayer(layer_MunnicipalBoundaries_9);
+            } else if (map.getZoom() > 19 || map.getZoom() < 12) {
+                map.removeLayer(layer_MunnicipalBoundaries_9);
+            }
+            if (map.getZoom() <= 19 && map.getZoom() >= 14) {
+                map.addLayer(layer_BCTransitStops_10);
+            } else if (map.getZoom() > 19 || map.getZoom() < 14) {
+                map.removeLayer(layer_BCTransitStops_10);
+            }
+            if (map.getZoom() <= 19 && map.getZoom() >= 10) {
+                map.addLayer(layer_Rec_Sites_WestKootsRecSites_11);
+            } else if (map.getZoom() > 19 || map.getZoom() < 10) {
+                map.removeLayer(layer_Rec_Sites_WestKootsRecSites_11);
+            }
+            if (map.getZoom() <= 19 && map.getZoom() >= 10) {
+                map.addLayer(layer_BikeShops_12);
+            } else if (map.getZoom() > 19 || map.getZoom() < 10) {
+                map.removeLayer(layer_BikeShops_12);
+            }
+        var overlaysTree = [
+            {label: '<img src="legend/RegionalDistricts_13.png" /> Regional Districts', layer: layer_RegionalDistricts_13},
+            {label: '<img src="legend/BikeShops_12.png" /> Bike Shops', layer: layer_BikeShops_12},
+            {label: '<img src="legend/Rec_Sites_WestKootsRecSites_11.png" /> Rec_Sites_WestKoots — Rec Sites', layer: layer_Rec_Sites_WestKootsRecSites_11},
+        {label: '<b>BC Transit</b>',  selectAllCheckbox: true, children: [
+            {label: '<img src="legend/BCTransitStops_10.png" /> BC Transit Stops', layer: layer_BCTransitStops_10},]},
+        {label: '<b>Municipalities</b>',  selectAllCheckbox: true, children: [
+            {label: '<img src="legend/MunnicipalBoundaries_9.png" /> Munnicipal Boundaries ', layer: layer_MunnicipalBoundaries_9},]},
+        {label: '<b>Cycling Routes</b>',  selectAllCheckbox: true, children: [
+            {label: '<img src="legend/WKCCExistingRoutes_8.png" /> WKCC - Existing Routes', layer: layer_WKCCExistingRoutes_8},
+            {label: '<img src="legend/WKCCProposedRoutes_7.png" /> WKCC - Proposed Routes', layer: layer_WKCCProposedRoutes_7},]},
+        {label: '<b>Bike Packing Routes</b>',  selectAllCheckbox: true, children: [
+            {label: '<img src="legend/SantaRosaValleysandVistas_6.png" /> Santa Rosa Valleys and Vistas', layer: layer_SantaRosaValleysandVistas_6},
+            {label: '<img src="legend/KootenayConfluence_5.png" /> Kootenay Confluence', layer: layer_KootenayConfluence_5},
+            {label: '<img src="legend/FrogPeakLoop_4.png" /> Frog Peak Loop', layer: layer_FrogPeakLoop_4},
+            {label: '<img src="legend/BonningtonScrambler_3.png" /> Bonnington Scrambler', layer: layer_BonningtonScrambler_3},]},
+        {label: '<b>Parks</b>',  selectAllCheckbox: true, children: [
+            {label: '<img src="legend/MunicipalParks_2.png" /> Municipal Parks', layer: layer_MunicipalParks_2},
+            {label: '<img src="legend/ProvincialParks_1.png" /> Provincial Parks', layer: layer_ProvincialParks_1},]},
+            {label: "Basemap (CartoDB)", layer: layer_BasemapCartoDB_0},]
+        var lay = L.control.layers.tree(null, overlaysTree,{
+            //namedToggle: true,
+            //selectorBack: false,
+            //closedSymbol: '&#8862; &#x1f5c0;',
+            //openedSymbol: '&#8863; &#x1f5c1;',
+            //collapseAll: 'Collapse all',
+            //expandAll: 'Expand all',
+            collapsed: true,
+        });
+        lay.addTo(map);
+        map.on("zoomend", function(){
+
+                if (map.hasLayer(layer_ProvincialParks_1)) {
+                    if (map.getZoom() <= 9 && map.getZoom() >= 19) {
+                        layer_ProvincialParks_1.eachLayer(function (layer) {
+                            layer.openTooltip();
+                        });
+                    } else {
+                        layer_ProvincialParks_1.eachLayer(function (layer) {
+                            layer.closeTooltip();
+                        });
+                    }
+                }
+                if (map.hasLayer(layer_MunicipalParks_2)) {
+                    if (map.getZoom() <= 9 && map.getZoom() >= 19) {
+                        layer_MunicipalParks_2.eachLayer(function (layer) {
+                            layer.openTooltip();
+                        });
+                    } else {
+                        layer_MunicipalParks_2.eachLayer(function (layer) {
+                            layer.closeTooltip();
+                        });
+                    }
+                }
+        });
+        setBounds();
+                if (map.hasLayer(layer_ProvincialParks_1)) {
+                    if (map.getZoom() <= 9 && map.getZoom() >= 19) {
+                        layer_ProvincialParks_1.eachLayer(function (layer) {
+                            layer.openTooltip();
+                        });
+                    } else {
+                        layer_ProvincialParks_1.eachLayer(function (layer) {
+                            layer.closeTooltip();
+                        });
+                    }
+                }
+                if (map.hasLayer(layer_MunicipalParks_2)) {
+                    if (map.getZoom() <= 9 && map.getZoom() >= 19) {
+                        layer_MunicipalParks_2.eachLayer(function (layer) {
+                            layer.openTooltip();
+                        });
+                    } else {
+                        layer_MunicipalParks_2.eachLayer(function (layer) {
+                            layer.closeTooltip();
+                        });
+                    }
+                }
+        var mapDiv = document.getElementById('map');
+        var row = document.createElement('div');
+        row.className="row";
+        row.id="all";
+        row.style.height = "100%";
+        var col1 = document.createElement('div');
+        col1.className="col9";
+        col1.id = "mapWindow";
+        col1.style.height = "99%";
+        col1.style.width = "80%";
+        col1.style.display = "inline-block";
+        var col2 = document.createElement('div');
+        col2.className="col3";
+        col2.id = "menu";
+        col2.style.display = "inline-block";
+        mapDiv.parentNode.insertBefore(row, mapDiv);
+        document.getElementById("all").appendChild(col1);
+        document.getElementById("all").appendChild(col2);
+        col1.appendChild(mapDiv)
+        var Filters = {"Trans_Canada_Trail": "bool","Surface": "str","Type": "str"};
+        
+        function filterFunc() {
+          map.eachLayer(function(lyr){
+          if ("options" in lyr && "dataVar" in lyr["options"]){
+            features = this[lyr["options"]["dataVar"]].features.slice(0);
+            try{
+              for (key in Filters){
+                keyS = key.replace(/[^a-zA-Z0-9_]/g, "")
+                if (Filters[key] == "str" || Filters[key] == "bool"){
+                  var selection = [];
+                  var options = document.getElementById("sel_" + keyS).options
+                  for (var i=0; i < options.length; i++) {
+                    if (options[i].selected) selection.push(options[i].value);
+                  }
+                    try{
+                      if (key in features[0].properties){
+                        for (i = features.length - 1;
+                          i >= 0; --i){
+                          if (selection.indexOf(
+                          features[i].properties[key])<0
+                          && selection.length>0) {
+                          features.splice(i,1);
+                          }
+                        }
+                      }
+                    } catch(err){
+                  }
+                }
+                if (Filters[key] == "int"){
+                  sliderVals =  document.getElementById(
+                    "div_" + keyS).noUiSlider.get();
+                  try{
+                    if (key in features[0].properties){
+                    for (i = features.length - 1; i >= 0; --i){
+                      if (parseInt(features[i].properties[key])
+                          < sliderVals[0]
+                          || parseInt(features[i].properties[key])
+                          > sliderVals[1]){
+                            features.splice(i,1);
+                          }
+                        }
+                      }
+                    } catch(err){
+                    }
+                  }
+                if (Filters[key] == "real"){
+                  sliderVals =  document.getElementById(
+                    "div_" + keyS).noUiSlider.get();
+                  try{
+                    if (key in features[0].properties){
+                    for (i = features.length - 1; i >= 0; --i){
+                      if (features[i].properties[key]
+                          < sliderVals[0]
+                          || features[i].properties[key]
+                          > sliderVals[1]){
+                            features.splice(i,1);
+                          }
+                        }
+                      }
+                    } catch(err){
+                    }
+                  }
+                if (Filters[key] == "date"
+                  || Filters[key] == "datetime"
+                  || Filters[key] == "time"){
+                  try{
+                    if (key in features[0].properties){
+                      HTMLkey = key.replace(/[&\/\\#,+()$~%.'":*?<>{} ]/g, '');
+                      startdate = document.getElementById("dat_" +
+                        HTMLkey + "_date1").value.replace(" ", "T");
+                      enddate = document.getElementById("dat_" +
+                        HTMLkey + "_date2").value.replace(" ", "T");
+                      for (i = features.length - 1; i >= 0; --i){
+                        if (features[i].properties[key] < startdate
+                          || features[i].properties[key] > enddate){
+                          features.splice(i,1);
+                        }
+                      }
+                    }
+                  } catch(err){
+                  }
+                }
+              }
+            } catch(err){
+            }
+          this[lyr["options"]["layerName"]].clearLayers();
+          this[lyr["options"]["layerName"]].addData(features);
+          }
+          })
+        }
+            document.getElementById("menu").appendChild(
+                document.createElement("div"));
+            var div_Trans_Canada_Trail = document.createElement('div');
+            div_Trans_Canada_Trail.id = "div_Trans_Canada_Trail";
+            div_Trans_Canada_Trail.className= "filterselect";
+            document.getElementById("menu").appendChild(div_Trans_Canada_Trail);
+            sel_Trans_Canada_Trail = document.createElement('select');
+            sel_Trans_Canada_Trail.multiple = true;
+            sel_Trans_Canada_Trail.size = 2;
+            sel_Trans_Canada_Trail.id = "sel_Trans_Canada_Trail";
+            var Trans_Canada_Trail_options_str = "<option value='' unselected></option>";
+            sel_Trans_Canada_Trail.onchange = function(){filterFunc()};
+            Trans_Canada_Trail_options_str  += '<option value="true">true</option>';
+            Trans_Canada_Trail_options_str  += '<option value="false">false</option>';
+            sel_Trans_Canada_Trail.innerHTML = Trans_Canada_Trail_options_str;
+            div_Trans_Canada_Trail.appendChild(sel_Trans_Canada_Trail);
+            var lab_Trans_Canada_Trail = document.createElement('div');
+            lab_Trans_Canada_Trail.innerHTML = 'Trans_Canada_Trail';
+            lab_Trans_Canada_Trail.className = 'filterlabel';
+            div_Trans_Canada_Trail.appendChild(lab_Trans_Canada_Trail);
+            var reset_Trans_Canada_Trail = document.createElement('div');
+            reset_Trans_Canada_Trail.innerHTML = 'clear filter';
+            reset_Trans_Canada_Trail.className = 'filterlabel';
+            reset_Trans_Canada_Trail.onclick = function() {
+                var options = document.getElementById("sel_Trans_Canada_Trail").options;
+                for (var i=0; i < options.length; i++) {
+                    options[i].selected = false;
+                }
+                filterFunc();
+            };
+            div_Trans_Canada_Trail.appendChild(reset_Trans_Canada_Trail);
+            document.getElementById("menu").appendChild(
+                document.createElement("div"));
+            var div_Surface = document.createElement('div');
+            div_Surface.id = "div_Surface";
+            div_Surface.className= "filterselect";
+            document.getElementById("menu").appendChild(div_Surface);
+            sel_Surface = document.createElement('select');
+            sel_Surface.multiple = true;
+            sel_Surface.size = 3;
+            sel_Surface.id = "sel_Surface";
+            var Surface_options_str = "<option value='' unselected></option>";
+            sel_Surface.onchange = function(){filterFunc()};
+            Surface_options_str  += '<option value="Aggregate">Aggregate</option>';
+            Surface_options_str  += '<option value="Natural">Natural</option>';
+            Surface_options_str  += '<option value="Paved">Paved</option>';
+            sel_Surface.innerHTML = Surface_options_str;
+            div_Surface.appendChild(sel_Surface);
+            var lab_Surface = document.createElement('div');
+            lab_Surface.innerHTML = 'Surface';
+            lab_Surface.className = 'filterlabel';
+            div_Surface.appendChild(lab_Surface);
+            var reset_Surface = document.createElement('div');
+            reset_Surface.innerHTML = 'clear filter';
+            reset_Surface.className = 'filterlabel';
+            reset_Surface.onclick = function() {
+                var options = document.getElementById("sel_Surface").options;
+                for (var i=0; i < options.length; i++) {
+                    options[i].selected = false;
+                }
+                filterFunc();
+            };
+            div_Surface.appendChild(reset_Surface);
+            document.getElementById("menu").appendChild(
+                document.createElement("div"));
+            var div_Type = document.createElement('div');
+            div_Type.id = "div_Type";
+            div_Type.className= "filterselect";
+            document.getElementById("menu").appendChild(div_Type);
+            sel_Type = document.createElement('select');
+            sel_Type.multiple = true;
+            sel_Type.size = 8;
+            sel_Type.id = "sel_Type";
+            var Type_options_str = "<option value='' unselected></option>";
+            sel_Type.onchange = function(){filterFunc()};
+            Type_options_str  += '<option value="Dedicated Cycling Route">Dedicated Cycling Route</option>';
+            Type_options_str  += '<option value="Dedicated Lane">Dedicated Lane</option>';
+            Type_options_str  += '<option value="Multiuse Pathway">Multiuse Pathway</option>';
+            Type_options_str  += '<option value="Multiuse Trail">Multiuse Trail</option>';
+            Type_options_str  += '<option value="Protected Lane">Protected Lane</option>';
+            Type_options_str  += '<option value="Shared Road">Shared Road</option>';
+            Type_options_str  += '<option value="Shared Shoulder">Shared Shoulder</option>';
+            Type_options_str  += '<option value="Single Track Trail">Single Track Trail</option>';
+            sel_Type.innerHTML = Type_options_str;
+            div_Type.appendChild(sel_Type);
+            var lab_Type = document.createElement('div');
+            lab_Type.innerHTML = 'Type';
+            lab_Type.className = 'filterlabel';
+            div_Type.appendChild(lab_Type);
+            var reset_Type = document.createElement('div');
+            reset_Type.innerHTML = 'clear filter';
+            reset_Type.className = 'filterlabel';
+            reset_Type.onclick = function() {
+                var options = document.getElementById("sel_Type").options;
+                for (var i=0; i < options.length; i++) {
+                    options[i].selected = false;
+                }
+                filterFunc();
+            };
+            div_Type.appendChild(reset_Type);
+        resetLabels([layer_ProvincialParks_1,layer_MunicipalParks_2,layer_BCTransitStops_10]);
+        map.on("zoomend", function(){
+            resetLabels([layer_ProvincialParks_1,layer_MunicipalParks_2,layer_BCTransitStops_10]);
+        });
+        map.on("layeradd", function(){
+            resetLabels([layer_ProvincialParks_1,layer_MunicipalParks_2,layer_BCTransitStops_10]);
+        });
+        map.on("layerremove", function(){
+            resetLabels([layer_ProvincialParks_1,layer_MunicipalParks_2,layer_BCTransitStops_10]);
+        });
+        </script>
+    </body>
+</html>
